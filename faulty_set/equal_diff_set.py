@@ -6,8 +6,8 @@ from einops import rearrange, repeat
 
 class set_game():
     def __init__(self, num_properties, num_values):
-        self.end_of_basic_tokens = 4
-        # self.end_of_property_tokens = self.end_of_basic_tokens + num_properties
+        self.num_basic_tokens = 5
+        # self.end_of_property_tokens = self.num_basic_tokens + num_properties
         # self.end_of_value_tokens = self.end_of_property_tokens + num_values
         self.num_properties = num_properties
         self.num_values = num_values
@@ -20,13 +20,24 @@ class set_game():
         self.NO_SET_token = torch.tensor([4])
 
         # maybe delete the property tokens actually? We will just always have the properties in the same order?
-        # self.property_tokens = torch.arange(self.end_of_basic_tokens, self.end_of_property_tokens)
+        # self.property_tokens = torch.arange(self.num_basic_tokens, self.end_of_property_tokens)
         # self.value_tokens = torch.arange(self.end_of_property_tokens, self.end_of_value_tokens)
 
-        self.end_of_value_tokens = self.end_of_basic_tokens + num_values * num_properties
-        self.value_tokens = torch.arange(self.end_of_basic_tokens, self.end_of_value_tokens)
+        self.num_value_tokens = num_values * num_properties
+        self.value_tokens = torch.arange(self.num_basic_tokens, self.num_value_tokens + self.num_basic_tokens)
 
         self.num_cards = num_values ** num_properties
+
+        self.tokens_to_string = [
+            " ",
+            ".",
+            ";",
+            "S",
+            "N",
+        ]
+        for i in range(num_properties):
+            for j in range(num_values):
+                self.tokens_to_string.append(chr(i + ord('a'))+str(j))
     
     # this is cursed how do we get it to not repeat stuff
     def shuffle_cards(self, num_cards):
@@ -139,14 +150,22 @@ class set_game():
     def cards_to_seq(self, cards):
         assert(cards.shape[1] == self.num_properties)
         per_card_tokens = self.num_properties + 1
-        cards_with_separators = torch.empty((cards.shape[0], self.num_properties+1))
-        cards_with_separators[:, :self.num_properties] = cards
-        cards_with_separators[:, self.num_properties] = torch.ones((cards.shape[0], )) * self.CS_token
         property_offsets = torch.arange(0, self.num_properties) * self.num_values
-        cards_with_separators = cards_with_separators + repeat(property_offsets, "p -> v p", v=self.num_values)
-        tokens = self.value_tokens[cards_with_separators]
-        return rearrange(tokens, "v p -> (v p)")
+        # print("cards to seq", cards, repeat(property_offsets, "p -> v p", v=self.num_values))
+        cards = cards + repeat(property_offsets, "p -> v p", v=self.num_values)
+        card_tokens = self.value_tokens[cards.int()]
+
+        tokens_with_separators = torch.empty((cards.shape[0], self.num_properties+1), dtype=torch.int)
+        tokens_with_separators[:, :self.num_properties] = card_tokens
+        tokens_with_separators[:, self.num_properties] = torch.ones((cards.shape[0], )).int() * self.CS_token
+        # print("tokens with separators", tokens_with_separators)
+        return rearrange(tokens_with_separators, "v p -> (v p)")
     
+    def seq_to_string(self, seq):
+        # print(seq)
+        return ''.join([self.tokens_to_string[t] for t in seq.tolist()])
+
+
     # Sequence is SOS C1;C2;C3;{SET or NO_SET} EOS, multiplied by #?
     # Therefore, each "sentence" has 3 + (num_properties + 1) * num_values elements
     def generate_faulty_check_sequences(self, num, length, possible_property_masks, set_probability = 0.5, property_mask_probabilities = None):
@@ -160,17 +179,29 @@ class set_game():
         per_card_tokens = self.num_properties + 1
         num_cards = self.num_values
         tokens_per_sentence = per_card_tokens * num_cards + 3
-        sequences = torch.empty((num, length * tokens_per_sentence))
+        sequences = torch.empty((num, length * tokens_per_sentence), dtype=torch.int)
         for i in range(num):
+            offset = 0
             for j in range(length):
-                if set_or_not[num, length]:
+                sequences[i,offset] = self.SOS_token
+                if set_or_not[i, j]:
                     cards = self.gen_random_set_faulty(property_masks[i])
+                    answer_token = self.SET_token
                 else:
                     cards = self.gen_random_non_set_faulty(property_masks[i])
+                    answer_token = self.NO_SET_token
+                cards_seq = self.cards_to_seq(cards)
+                card_start = offset+1
+                card_end = card_start + num_cards*per_card_tokens
+                sequences[i, card_start: card_end] = cards_seq
+                sequences[i, card_end] = answer_token
+                sequences[i, card_end+1] = self.EOS_token
+                offset += tokens_per_sentence
+        return sequences
                 
     
     def generate_perfect_check_sequences(self, num, length):
-        return sefl.generate_faulty_check_sequences(num, length, torch.ones(1, self.num_properties))
+        return self.generate_faulty_check_sequences(num, length, torch.ones(1, self.num_properties))
 
 
 if __name__ == "__main__":
@@ -180,7 +211,8 @@ if __name__ == "__main__":
     game.check_set(cards)
     assert(game.check_set(torch.tensor([[0,0,0,0], [1,1,0,0], [2,2,0,0]])) == True)
     assert(game.check_set(torch.tensor([[0,0,0,0], [1,1,0,0], [2,2,0,1]])) == False)
-
+    
+    game = set_game(4, 4)
     for i in range(1000):
         assert(game.check_set(game.gen_random_set()) == True)
     # print("fafa")
@@ -197,3 +229,21 @@ if __name__ == "__main__":
             portion_valid += 1
             assert(game.check_set(set_cards) == True)
     print("portion valid sets", portion_valid / num_set_checks)
+
+    seqs = game.generate_perfect_check_sequences(5, 5)
+    print(game.seq_to_string(seqs[2]))
+
+    first_faulty_mask = torch.ones((1, game.num_properties))
+    first_faulty_mask[0, 0] = 0
+    seqs_first_faulty = game.generate_faulty_check_sequences(5, 5, first_faulty_mask)
+    print(game.seq_to_string(seqs_first_faulty[2]))
+
+    first_faulty_mask = torch.ones((2, game.num_properties))
+    first_faulty_mask[0, 0] = 0
+    first_faulty_mask[1, 1] = 0
+    seqs_first_faulty = game.generate_faulty_check_sequences(5, 5, first_faulty_mask)
+    print("0", game.seq_to_string(seqs_first_faulty[0]))
+    print("1", game.seq_to_string(seqs_first_faulty[1]))
+    print("2", game.seq_to_string(seqs_first_faulty[2]))
+    print("3", game.seq_to_string(seqs_first_faulty[3]))
+    print("4", game.seq_to_string(seqs_first_faulty[4]))
