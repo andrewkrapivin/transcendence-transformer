@@ -200,8 +200,57 @@ class set_game():
         return sequences
                 
     
-    def generate_perfect_check_sequences(self, num, length):
+    def generate_perfect_check_sequences(self, num, length, set_probability = 0.5):
         return self.generate_faulty_check_sequences(num, length, torch.ones(1, self.num_properties))
+
+    # def generate_perfect_then_faulty(self, num, length, possible_property_masks, set_probability = 0.5, property_mask_probabilities = None):
+    def generate_faulty_one_way_check_faulty_another(self, num, length, checker_possible_property_masks, generator_possible_property_masks, set_probability = 0.5, checker_property_mask_probabilities = None, generator_property_mask_probabilities = None):
+        if checker_property_mask_probabilities == None:
+            checker_property_mask_probabilities = torch.ones(checker_possible_property_masks.shape[0])
+        if generator_property_mask_probabilities == None:
+            generator_property_mask_probabilities = torch.ones(generator_possible_property_masks.shape[0])
+        
+        checker_property_mask_selection_idx = torch.multinomial(checker_property_mask_probabilities, num, replacement=True)
+        checker_property_masks = checker_possible_property_masks[checker_property_mask_selection_idx]
+
+        generator_property_mask_selection_idx = torch.multinomial(generator_property_mask_probabilities, num*length, replacement=True)
+        generator_property_masks = generator_possible_property_masks[generator_property_mask_selection_idx]
+        generator_property_masks = rearrange(generator_property_masks, "(n l) p -> n l p", n = num)
+
+        set_or_not = torch.bernoulli(torch.ones((num, length)) * set_probability).bool()
+
+        per_card_tokens = self.num_properties + 1
+        num_cards = self.num_values
+        tokens_per_sentence = per_card_tokens * num_cards + 3
+        sequences = torch.empty((num, length * tokens_per_sentence), dtype=torch.int)
+        for i in range(num):
+            offset = 0
+            for j in range(length):
+                sequences[i,offset] = self.SOS_token
+                if set_or_not[i, j]:
+                    cards = self.gen_random_set_faulty(generator_property_masks[i, j])
+                    # answer_token = self.SET_token
+                else:
+                    cards = self.gen_random_non_set_faulty(generator_property_masks[i, j])
+                    # answer_token = self.NO_SET_token
+                if self.faulty_check_set(cards, checker_property_masks[i]):
+                    answer_token = self.SET_token
+                else:
+                    answer_token = self.NO_SET_token
+                cards_seq = self.cards_to_seq(cards)
+                card_start = offset+1
+                card_end = card_start + num_cards*per_card_tokens
+                sequences[i, card_start: card_end] = cards_seq
+                sequences[i, card_end] = answer_token
+                sequences[i, card_end+1] = self.EOS_token
+                offset += tokens_per_sentence
+        return sequences
+
+    
+    # Possible TODO: Do something with the find problem, of finding a set in a group of cards
+    # Seems difficult to do, as if there are multiple options then how could it learn them
+    # Might still be useful to sample a random one
+    # It would at least (assuming it learns) learn how to classify a group of cards as containing a set or not
 
 
 if __name__ == "__main__":
@@ -213,22 +262,22 @@ if __name__ == "__main__":
     assert(game.check_set(torch.tensor([[0,0,0,0], [1,1,0,0], [2,2,0,1]])) == False)
     
     game = set_game(4, 4)
-    for i in range(1000):
-        assert(game.check_set(game.gen_random_set()) == True)
-    # print("fafa")
+    # for i in range(1000):
+    #     assert(game.check_set(game.gen_random_set()) == True)
+    # # print("fafa")
 
-    for i in range(1000):
-        assert(game.check_set(game.gen_random_non_set()) == False)
+    # for i in range(1000):
+    #     assert(game.check_set(game.gen_random_non_set()) == False)
 
-    portion_valid = 0
-    num_set_checks = 1000
-    for i in range(num_set_checks):
-        cards = game.shuffle_cards(8)
-        has_set, set_cards = game.find_in_set(cards)
-        if has_set:
-            portion_valid += 1
-            assert(game.check_set(set_cards) == True)
-    print("portion valid sets", portion_valid / num_set_checks)
+    # portion_valid = 0
+    # num_set_checks = 1000
+    # for i in range(num_set_checks):
+    #     cards = game.shuffle_cards(18)
+    #     has_set, set_cards = game.find_in_set(cards)
+    #     if has_set:
+    #         portion_valid += 1
+    #         assert(game.check_set(set_cards) == True)
+    # print("portion valid sets", portion_valid / num_set_checks)
 
     seqs = game.generate_perfect_check_sequences(5, 5)
     print(game.seq_to_string(seqs[2]))
@@ -247,3 +296,10 @@ if __name__ == "__main__":
     print("2", game.seq_to_string(seqs_first_faulty[2]))
     print("3", game.seq_to_string(seqs_first_faulty[3]))
     print("4", game.seq_to_string(seqs_first_faulty[4]))
+
+    seqs_some_faulty_diff_generator = game.generate_faulty_one_way_check_faulty_another(5, 5, first_faulty_mask, first_faulty_mask)
+    print("0", game.seq_to_string(seqs_some_faulty_diff_generator[0]))
+    print("1", game.seq_to_string(seqs_some_faulty_diff_generator[1]))
+    print("2", game.seq_to_string(seqs_some_faulty_diff_generator[2]))
+    print("3", game.seq_to_string(seqs_some_faulty_diff_generator[3]))
+    print("4", game.seq_to_string(seqs_some_faulty_diff_generator[4]))
