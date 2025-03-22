@@ -1,7 +1,7 @@
 import torch
 import math
 import random
-
+from torch.utils.data import random_split
 from einops import rearrange, repeat
 
 class set_game():
@@ -204,7 +204,7 @@ class set_game():
         return self.generate_faulty_check_sequences(num, length, torch.ones(1, self.num_properties))
 
     # def generate_perfect_then_faulty(self, num, length, possible_property_masks, set_probability = 0.5, property_mask_probabilities = None):
-    def generate_faulty_one_way_check_faulty_another(self, num, length, checker_possible_property_masks, generator_possible_property_masks, set_probability = 0.5, checker_property_mask_probabilities = None, generator_property_mask_probabilities = None):
+    def generate_faulty_one_way_check_faulty_another(self, num, length, checker_possible_property_masks, generator_possible_property_masks, set_probability = 0.5, checker_property_mask_probabilities = None, generator_property_mask_probabilities = None, val=False, val_p = 0.1):
         if checker_property_mask_probabilities == None:
             checker_property_mask_probabilities = torch.ones(checker_possible_property_masks.shape[0])
         if generator_property_mask_probabilities == None:
@@ -244,7 +244,14 @@ class set_game():
                 sequences[i, card_end] = answer_token
                 sequences[i, card_end+1] = self.EOS_token
                 offset += tokens_per_sentence
-        return sequences
+
+        if val:
+            train_size = int((1 - val_p) * len(sequences))
+            val_size = len(sequences) - train_size
+            train_sequences, val_sequences = random_split(sequences, [train_size, val_size])
+            return train_sequences, val_sequences
+        
+        return sequences, None
 
     
     # Possible TODO: Do something with the find problem, of finding a set in a group of cards
