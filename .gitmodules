@@ -1,0 +1,3 @@
+[submodule "transcendenceGPT"]
+	path = transcendenceGPT
+	url = git@github.com:biancaganescu/transcendenceGPT.git
