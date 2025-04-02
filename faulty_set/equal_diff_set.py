@@ -168,7 +168,7 @@ class set_game():
 
     # Sequence is SOS C1;C2;C3;{SET or NO_SET} EOS, multiplied by #?
     # Therefore, each "sentence" has 3 + (num_properties + 1) * num_values elements
-    def generate_faulty_check_sequences(self, num, length, possible_property_masks, set_probability = 0.5, property_mask_probabilities = None):
+    def generate_faulty_check_sequences(self, num, length, possible_property_masks, set_probability = 0.5, property_mask_probabilities = None, val=False, val_p = 0.1):
         if property_mask_probabilities == None:
             property_mask_probabilities = torch.ones(possible_property_masks.shape[0])
         
@@ -197,7 +197,15 @@ class set_game():
                 sequences[i, card_end] = answer_token
                 sequences[i, card_end+1] = self.EOS_token
                 offset += tokens_per_sentence
-        return sequences
+        
+        if val:
+            train_size = int((1 - val_p) * len(sequences))
+            val_size = len(sequences) - train_size
+            train_sequences, val_sequences = random_split(sequences, [train_size, val_size])
+            return train_sequences, val_sequences
+        
+        return sequences, None
+
                 
     
     def generate_perfect_check_sequences(self, num, length, set_probability = 0.5):

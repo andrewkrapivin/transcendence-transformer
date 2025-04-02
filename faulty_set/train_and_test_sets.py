@@ -8,9 +8,9 @@ num_values = 3
 # This is the number of potential sets evaluated by an agent in a sequence
 train_length_sequence = 30
 test_length_sequence = 30
-num_sequences_train = 20000
+num_sequences_train = 60000
 num_sequences_test = 2000
-
+length_sequence = 50
 # Experiment 1 is making the training data have faulty agents
 # Then test using perfect agent
 # There are two variants:
@@ -60,8 +60,22 @@ for i in range(num_properties):
 
 # Uncomment to generate test data for only one expert
 
-num_sequences_test = 1
-test_length_sequence = 8000
+# num_sequences_test = 1
+# test_length_sequence = 8000
 
-test_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_test, test_length_sequence, random_single_fault_masks, random_single_fault_masks_with_perfect, set_probability=0.8)
-torch.save(test_sequences, "./transcendenceGPT/data/faulty_one_expert_test/test.pt")
+# test_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_test, test_length_sequence, random_single_fault_masks, random_single_fault_masks_with_perfect, set_probability=0.8)
+# torch.save(test_sequences, "./transcendenceGPT/data/faulty_one_expert_test/test.pt")
+
+# train_sequences, val_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_train, length_sequence, random_single_fault_masks, random_single_fault_masks_with_perfect, val=True, set_probability = 0.8)
+test_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_test, length_sequence, perfect_mask, random_single_fault_masks_with_perfect, set_probability = 0.8)
+# test_in_dist_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_test, length_sequence, random_single_fault_masks, random_single_fault_masks_with_perfect, set_probability = 0.8)
+
+# torch.save(train_sequences, "./transcendenceGPT/data/card_set_50x50_big/train.pt")
+# torch.save(val_sequences, "./transcendenceGPT/data/card_set_50x50_big/val.pt")
+torch.save(test_sequences, "./transcendenceGPT/data/in_context_learning_test/len_50_test.pt")
+# torch.save(test_in_dist_sequences, "./transcendenceGPT/data/card_set_50x50_big/test_in_dist.pt")
+
+
+# for i in range(1, 51):
+#     test_in_dist_sequences = game.generate_faulty_one_way_check_faulty_another(num_sequences_test, i, random_single_fault_masks, random_single_fault_masks_with_perfect, set_probability = 0.8)
+#     torch.save(test_in_dist_sequences, "./transcendenceGPT/data/in_distr_icl_test/seq_len_" + str(i) + ".pt")
